@@ -16,8 +16,8 @@ import MetaUtils (todo, todoImpl)
 
 newtype Cont r a = Cont { runCont :: (a -> r) -> r }
 
-todoImpl ''Functor ''Cont
-
+instance Functor (Cont r) where
+    fmap f (Cont cont) = Cont $ \g -> cont $ \x -> g $ f x
 
 -- 2.2. Композиция направлений
 --
@@ -28,8 +28,11 @@ todoImpl ''Functor ''Cont
 
 newtype Compose f g a = Compose { getCompose :: f (g a) }
 
-todoImpl ''Functor ''Compose
-todoImpl ''Contravariant ''Compose
+instance (Functor f, Functor g) => Functor (Compose f g) where
+    fmap f (Compose c) = Compose $ fmap (fmap f) c
+
+instance (Contravariant f, Functor g) => Contravariant (Compose f g) where
+    contramap f (Compose c) = Compose $ contramap (fmap f) c
 
 
 -- 2.3. Одинаковый map, разные схемы
@@ -40,10 +43,20 @@ todoImpl ''Contravariant ''Compose
 -- может менять тип элемента. cata и ana берутся из уровня 1.
 
 cataMap :: (a -> b) -> List a -> List b
-cataMap = todo "2.3 cataMap"
+cataMap f =
+  cata
+    ( \case
+        Nil -> In Nil
+        Cons x xs -> In $ Cons (f x) xs
+    )
 
 anaMap :: (a -> b) -> List a -> List b
-anaMap = todo "2.3 anaMap"
+anaMap f =
+  ana
+    ( \case
+        In Nil -> Nil
+        In (Cons x xs) -> Cons (f x) xs
+    )
 
 
 -- 2.4. Сортировка через дерево
@@ -54,14 +67,20 @@ anaMap = todo "2.3 anaMap"
 -- Форма TreeF выдана в Defs. partition может пригодиться.
 -- hylo сначала принимает коалгебру, затем алгебру — как в главе 4.
 
-hylo :: Functor f => Coalgebra f s -> Algebra f a -> s -> a
+hylo :: (Functor f) => Coalgebra f s -> Algebra f a -> s -> a
 hylo psi phi = cata phi . ana psi
 
 phiTreeInorder :: Algebra (TreeF a) [a]
-phiTreeInorder = todo "2.4 обход"
+phiTreeInorder = \case
+  Leaf -> []
+  Branch l x r -> l ++ [x] ++ r
 
-psiTreeBST :: Ord a => Coalgebra (TreeF a) [a]
-psiTreeBST = todo "2.4 разбиение"
+psiTreeBST :: (Ord a) => Coalgebra (TreeF a) [a]
+psiTreeBST = \case
+  [] -> Leaf
+  (pivot : xs) ->
+    let (l, r) = partition (< pivot) xs
+     in Branch l pivot r
 
 hyloSort :: Ord a => [a] -> [a]
 hyloSort = hylo psiTreeBST phiTreeInorder
@@ -75,13 +94,14 @@ hyloSort = hylo psiTreeBST phiTreeInorder
 -- аргументов в обычные списки. Элементы левого списка идут перед правым.
 
 toChurch :: [a] -> ChurchList a
-toChurch = todo "2.5 toChurch"
+toChurch [] = ChurchList $ \_ nil -> nil
+toChurch (x : xs) = ChurchList $ \cons nil -> cons x (runChurchList (toChurch xs) cons nil)
 
 fromChurch :: ChurchList a -> [a]
-fromChurch = todo "2.5 fromChurch"
+fromChurch (ChurchList l) = l (:) []
 
 appendChurch :: ChurchList a -> ChurchList a -> ChurchList a
-appendChurch = todo "2.5 appendChurch"
+appendChurch (ChurchList l) (ChurchList r) = ChurchList $ \cons nil -> l cons $ r cons nil
 
 
 -- 2.6. Два скрытых состояния
@@ -93,7 +113,11 @@ appendChurch = todo "2.5 appendChurch"
 -- Box, stepBox, boxFromList, boxToList и примеры источников выданы.
 
 zipBox :: Box (ListF a) -> Box (ListF b) -> Box (ListF (a, b))
-zipBox = todo "2.6 zipBox"
+zipBox l r = Box (l, r) $ \case
+  (l, r) -> case (stepBox l, stepBox r) of
+    (Nil, _) -> Nil
+    (_, Nil) -> Nil
+    ((Cons x xs), (Cons y ys)) -> Cons (x, y) (xs, ys)
 
 
 -- 2.7. Пропуск не означает конец
@@ -105,7 +129,12 @@ zipBox = todo "2.6 zipBox"
 -- искать следующий подходящий элемент рекурсией внутри шага не нужно.
 
 skipCounterexample :: [Integer]
-skipCounterexample = todo "2.7 контрпример"
+skipCounterexample = [2, 1, 2]
 
 filterS :: (a -> Bool) -> Stream a -> Stream a
-filterS = todo "2.7 filterS"
+filterS p (Stream next s) = Stream next' s
+  where
+    next' st = case next st of
+      Done -> Done
+      Skip st' -> Skip st'
+      Yield x st' -> if p x then Yield x st' else Skip st'

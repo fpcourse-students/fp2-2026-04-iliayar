@@ -2,7 +2,7 @@
 module Level3 where
 
 import Defs
-import Level1 (Expr, ana, cata)
+import Level1 (Expr, ana, cata, ExprF (..))
 import MetaUtils (todo)
 
 
@@ -28,7 +28,14 @@ import MetaUtils (todo)
 -- Используйте форму ExprF из 1.5; эта задача зависит от cata, ana и ExprF.
 
 compile :: Expr -> ByteCode
-compile = todo "3.1 compile"
+compile = cata $ \case
+  Const x -> [PushConstInstr x]
+  Add l r -> l ++ r ++ [AddInstr]
+  Mult l r -> l ++ r ++ [MultInstr]
 
 evalStackMachine :: (ByteCode, Stack) -> List Stack
-evalStackMachine = todo "3.1 evalStackMachine"
+evalStackMachine = ana $ \case
+  (PushConstInstr x : insts, st) -> let st' = x : st in Cons st' (insts, st')
+  (AddInstr : insts, l : r : st) -> let st' = (l + r) : st in Cons st' (insts, st')
+  (MultInstr : insts, l : r : st) -> let st' = (l * r) : st in Cons st' (insts, st')
+  _ -> Nil
